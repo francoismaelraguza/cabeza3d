@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cabeza 3D</title>
+<style>html,body{margin:0;height:100%;background:#0d0d10;overflow:hidden;font-family:system-ui,sans-serif}
+canvas{display:block}#h{position:fixed;left:16px;bottom:14px;color:#9a9aa5;font-size:13px}</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/"}}</script></head>
+<body><div id="h">Arrastra para rotar · rueda para zoom</div>
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import TEX from './tex.js';
+import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);
+renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.outputColorSpace=THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+const scene=new THREE.Scene();
+const env=new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(),0.04).texture;scene.background=new THREE.Color(0x14141a);
+const cam=new THREE.PerspectiveCamera(30,innerWidth/innerHeight,1,500);cam.position.set(0,0,70);
+const ctl=new OrbitControls(cam,renderer.domElement);ctl.enableDamping=true;ctl.target.set(0,-1,0);ctl.minDistance=35;ctl.maxDistance=140;
+scene.add(new THREE.HemisphereLight(0xffffff,0x554444,1.2));
+const key=new THREE.DirectionalLight(0xfff1e0,1.6);key.position.set(25,35,50);scene.add(key);
+const rim=new THREE.DirectionalLight(0x8fb0ff,0.8);rim.position.set(-40,10,-30);scene.add(rim);
+
+// ---- parametros de la foto (proyeccion en perspectiva) ----
+const F=2000,ZC=40,CX=522,PY0=345,IW=1002,IH=1058;
+const tab=(pts)=>y=>{if(y>=pts[0][0])return pts[0][1];for(let i=1;i<pts.length;i++){if(y>=pts[i][0]){const a=pts[i-1],b=pts[i],t=(y-b[0])/(a[0]-b[0]);const s=t*t*(3-2*t);return b[1]+(a[1]-b[1])*s}}return pts[pts.length-1][1]};
+const W_=tab([[12,0],[11.5,2.6],[10.5,4.6],[9,6],[7,7],[4,7.55],[1,7.7],[-2,7.7],[-4,7.4],[-6,6.9],[-8,5.9],[-9.5,4.6],[-10.8,3],[-11.6,1.6],[-12.2,0]]);
+const ZF=tab([[12,0],[11.5,3.5],[10.5,5.5],[9,7.2],[7,8.4],[4,9],[2,9],[0,8.8],[-2,8.4],[-4,8],[-6,8.4],[-7,8.5],[-8,7.9],[-9,7.7],[-10,7.6],[-11,6.9],[-11.6,5.5],[-12.2,3.8]]);
+const ZB=tab([[12,0],[11.5,-3.5],[10.5,-6.5],[9,-8.8],[7,-10],[4,-10.5],[0,-10.2],[-3,-9],[-6,-9],[-8,-7.5],[-10,-4.5],[-11.6,-1],[-12.2,1]]);
+const g2=(x,y,cx,cy,sx,sy)=>Math.exp(-((x-cx)**2/(2*sx*sx)+(y-cy)**2/(2*sy*sy)));
+function bumps(x,y){let d=0;
+ d+=2.9*g2(x,y,0,-3.5,1.0,0.8)+1.2*g2(x,y,0,-1.5,0.75,1.6)+0.5*g2(x,y,0,0.2,0.9,0.7); // nariz
+ d+=1.3*(g2(x,y,2.0,-3.9,0.7,0.55)+g2(x,y,-2.0,-3.9,0.7,0.55)); // alas
+ d+=0.5*g2(x,y,0,-6.1,1.6,0.4)+0.7*g2(x,y,0,-7.5,1.5,0.5)-0.3*g2(x,y,0,-6.8,2.2,0.1); // labios
+ d+=0.9*g2(x,y,0,-10,1.9,1.1)-0.6*g2(x,y,0,-8.5,2.3,0.45); // mentón
+ d+=0.7*(g2(x,y,4.8,-1.5,1.9,1.6)+g2(x,y,-4.8,-1.5,1.9,1.6)); // pómulos
+ d-=0.4*(g2(x,y,2.9,-5.0,0.5,1.3)+g2(x,y,-2.9,-5.0,0.5,1.3)); // surcos
+ d+=0.6*g2(x,y,0,2.4,4.2,0.7); // arcos
+ return d}
+const N=220,M=288,NE=2.5;
+const pos=[],idx=[],uvs=[],base=[],blendA=[];
+const ys=[];for(let i=0;i<=N;i++)ys.push(12-(24.2*i/N));
+for(let i=0;i<=N;i++){const y=ys[i],w=W_(y),zf=ZF(y),zb=ZB(y),zm=(zf+zb)/2;
+ for(let j=0;j<=M;j++){const ph=j/M*Math.PI*2,s=Math.sin(ph),c=Math.cos(ph);
+  const x=w*Math.sign(s)*Math.pow(Math.abs(s),2/NE);
+  let z=zm+(c>=0?(zf-zm):(zb-zm))*Math.sign(c)*Math.pow(Math.abs(c),2/NE);
+  if(c>0){const fr=Math.min(1,c*3);z+=bumps(x,y)*fr}
+  pos.push(x,y,z)}}
+for(let i=0;i<N;i++)for(let j=0;j<M;j++){const a=i*(M+1)+j,b=a+M+1;idx.push(a,b,a+1,b,b+1,a+1)}
+const geo=new THREE.BufferGeometry();
+geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));geo.setIndex(idx);geo.computeVertexNormals();
+const nrm=geo.attributes.normal;
+const hl=th=>{const a=Math.abs(th)*180/Math.PI;const p=[[0,7.4],[40,4.6],[70,1.6],[90,0.4],[120,-3],[180,-7.5]];for(let i=1;i<p.length;i++)if(a<=p[i][0]){const t=(a-p[i-1][0])/(p[i][0]-p[i-1][0]);return p[i-1][1]+(p[i][1]-p[i-1][1])*t}return -7.5};
+const sm=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t)};
+const skin=new THREE.Color().setRGB(.66,.50,.43,THREE.SRGBColorSpace),hairC=new THREE.Color(0x1a110d),hairRoots=[];
+for(let k=0;k<pos.length/3;k++){const x=pos[3*k],y=pos[3*k+1],z=pos[3*k+2];
+ const dist=ZC-z,px=CX+F*x/dist,py=PY0-F*y/dist;uvs.push(px/IW,1-py/IH);
+ const nz=nrm.getZ(k);let bl=sm(0.05,0.45,nz)*sm(0,30,px)*sm(0,30,IW-px)*sm(-40,10,IH-py)*(py>0?1:0)*sm(-30,10,py);
+ const th=Math.atan2(x,z),inHair=y>hl(th);
+ const col=inHair?hairC:skin;base.push(col.r,col.g,col.b);
+ if(inHair){bl*=0.0;hairRoots.push(k)}
+ blendA.push(bl)}
+geo.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));
+geo.setAttribute('aBase',new THREE.Float32BufferAttribute(base,3));
+geo.setAttribute('aBlend',new THREE.Float32BufferAttribute(blendA,1));
+const tex=new THREE.TextureLoader().load(TEX);tex.colorSpace=THREE.SRGBColorSpace;tex.anisotropy=8;
+const mat=new THREE.MeshStandardMaterial({map:tex,roughness:.55,metalness:0,envMap:env,envMapIntensity:.2});
+mat.onBeforeCompile=sh=>{
+ sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute vec3 aBase;attribute float aBlend;varying vec3 vBase;varying float vBl;varying vec3 vObj;')
+  .replace('#include <begin_vertex>','#include <begin_vertex>\nvBase=aBase;vBl=aBlend;vObj=position;');
+ sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying vec3 vBase;varying float vBl;varying vec3 vObj;float h13(vec3 p){p=fract(p*.1031);p+=dot(p,p.zyx+31.32);return fract((p.x+p.y)*p.z);}')
+  .replace('#include <map_fragment>',`vec3 ph=texture2D(map,vMapUv).rgb;
+   vec3 col=mix(vBase,ph,vBl);
+   float sp=h13(floor(vObj*55.));col*=1.-.10*step(.8,sp)*(1.-vBl)*step(vObj.y,-2.)*step(vObj.y,5.);
+   diffuseColor.rgb=col*.55;`)
+  .replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\ntotalEmissiveRadiance+=col*.5;')};
+const head=new THREE.Mesh(geo,mat);scene.add(head);
+
+const skinMat=()=>new THREE.MeshStandardMaterial({color:skin.clone().multiplyScalar(.55),emissive:skin.clone().multiplyScalar(.45),roughness:.6});
+// cuello
+const neck=new THREE.Mesh(new THREE.CylinderGeometry(5.4,6.2,12,48,1,true),skinMat());
+neck.scale.set(1,1,1.1);neck.position.set(0,-13,-3.8);scene.add(neck);
+const collar=new THREE.Mesh(new THREE.TorusGeometry(6.2,1.1,16,64),new THREE.MeshStandardMaterial({color:0x1b2338,roughness:.9}));
+collar.rotation.x=Math.PI/2;collar.scale.set(1,1.1,1);collar.position.set(0,-18.5,-3.8);scene.add(collar);
+// orejas
+for(const sgn of[-1,1]){const e=new THREE.Mesh(new THREE.SphereGeometry(1,24,24),skinMat());
+ e.scale.set(.9,3.1,2);e.position.set(sgn*7.7,-1.6,-1.2);e.rotation.set(0,sgn*-.35,sgn*.12);scene.add(e);}
+
+// ---- gafas 3D (coordenadas de pixel de la foto) ----
+const interp=(pts,x)=>{if(x<=pts[0][0])return pts[0][1];for(let i=1;i<pts.length;i++)if(x<=pts[i][0]){const a=pts[i-1],b=pts[i];return a[1]+(b[1]-a[1])*(x-a[0])/(b[0]-a[0])}return pts[pts.length-1][1]};
+const OT=[[62,198],[100,188],[200,186],[330,194],[430,205],[500,212],[580,208],[700,186],[800,176],[900,176],[992,178]];
+const TH=[[62,60],[100,35],[300,30],[430,38],[500,40],[580,40],[700,38],[800,32],[992,40]];
+const BT=[[60,300],[76,385],[108,434],[170,474],[250,498],[330,500],[405,490],[440,478],[458,425],[478,334],[500,316],[572,318],[596,350],[618,440],[640,480],[660,502],[700,504],[780,494],[860,476],[940,446],[985,414],[997,398],[1000,330]];
+const GZ=x=>10.4-0.10*x*x;
+function gw(px,py){let x=(px-CX)/F*30;for(let i=0;i<12;i++){x=(px-CX)/F*(ZC-GZ(x))}const z=GZ(x);return new THREE.Vector3(x,-(py-PY0)*(ZC-z)/F,z)}
+const frameMat=new THREE.MeshPhysicalMaterial({color:0x4d0e0b,roughness:.2,clearcoat:1,clearcoatRoughness:.08,envMap:env,envMapIntensity:1.2});
+const lensMat=new THREE.MeshPhysicalMaterial({color:0x17110f,roughness:.04,metalness:.1,transparent:true,opacity:.84,clearcoat:1,envMap:env,envMapIntensity:1.6,side:THREE.DoubleSide,depthWrite:false});
+const gl=new THREE.Group();
+{ // lente
+ const SX=200,SY=12,lp=[],li=[];
+ for(let a=0;a<=SX;a++){const px=64+(996-64)*a/SX;const top=interp(OT,px)+interp(TH,px)-6,bot=interp(BT,px)-6;
+  for(let b=0;b<=SY;b++){const py=bot+(top-bot)*b/SY;const v=gw(px,py);lp.push(v.x,v.y,v.z+.05)}}
+ for(let a=0;a<SX;a++)for(let b=0;b<SY;b++){const i=a*(SY+1)+b,j=i+SY+1;li.push(i,j,i+1,j,j+1,i+1)}
+ const lg=new THREE.BufferGeometry();lg.setAttribute('position',new THREE.Float32BufferAttribute(lp,3));lg.setIndex(li);lg.computeVertexNormals();
+ const lens=new THREE.Mesh(lg,lensMat);lens.renderOrder=2;gl.add(lens);
+ // barra superior (barrido elíptico)
+ const R=14,pr=[],pi=[];const S=160;
+ for(let a=0;a<=S;a++){const px=62+(998-62)*a/S;const t0=interp(OT,px)-4,t1=interp(OT,px)+interp(TH,px);
+  const c=gw(px,(t0+t1)/2),c2=gw(px+4,(t0+t1)/2);const T=c2.clone().sub(c).normalize();const N=new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0),T).multiplyScalar(-1).normalize();const U=new THREE.Vector3().crossVectors(N,T).normalize();
+  const hh=(gw(px,t0).y-gw(px,t1).y)/2,dd=.5;
+  for(let r=0;r<R;r++){const ph=r/R*Math.PI*2;const q=c.clone().addScaledVector(N,dd*Math.cos(ph)).addScaledVector(U,hh*Math.sin(ph));pr.push(q.x,q.y,q.z)}}
+ for(let a=0;a<S;a++)for(let r=0;r<R;r++){const i=a*R+r,i2=a*R+(r+1)%R,j=i+R,j2=i2+R;pi.push(i,j,i2,j,j2,i2)}
+ const bg=new THREE.BufferGeometry();bg.setAttribute('position',new THREE.Float32BufferAttribute(pr,3));bg.setIndex(pi);bg.computeVertexNormals();gl.add(new THREE.Mesh(bg,frameMat));
+ // aro inferior + laterales
+ const path=[];for(let py=interp(OT,62)+34;py<300;py+=14)path.push(gw(63,py));
+ for(let px=62;px<=1000;px+=8)path.push(gw(px,interp(BT,px)-2));
+ for(let py=330;py>interp(OT,996)+34;py-=14)path.push(gw(997,py));
+ const tube=new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(path),400,.26,10,false),frameMat);gl.add(tube);
+ // patillas
+ for(const sg of[-1,1]){const e=gw(sg<0?64:996,300);const pts=[e,new THREE.Vector3(sg*8.5,e.y,-1.5),new THREE.Vector3(sg*8.1,e.y-.2,-6),new THREE.Vector3(sg*7.6,e.y-2.4,-8)];
+  gl.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts),40,.3,10,false),frameMat));}
+}
+scene.add(gl);
+
+// pelo
+const P=new THREE.Vector3(),Nn=new THREE.Vector3();
+const verts=[],cols=[],hidx=[];let vc=0;
+let seed=7;const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
+const crown=new THREE.Vector3(0,11.5,-1.5);
+for(let s=0;s<26000;s++){
+ const k=hairRoots[Math.floor(rnd()*hairRoots.length)];
+ P.set(pos[3*k],pos[3*k+1],pos[3*k+2]);Nn.set(nrm.getX(k),nrm.getY(k),nrm.getZ(k));
+ if(P.y>10.8&&rnd()<.5)continue;
+ const flow=P.clone().sub(crown);flow.addScaledVector(Nn,-flow.dot(Nn));flow.y-=1.2;flow.normalize();
+ const front=sm(-2,8,P.z)*sm(2,8,P.y);
+ const len=(P.y>4?2.6:P.y>-1?1.4:1.0)*(0.7+rnd()*.6)*(1-front*.15);
+ const side=new THREE.Vector3().crossVectors(flow,Nn).normalize();
+ const w0=.09+rnd()*.05,wav=(rnd()-.5)*.9,ph=rnd()*6;
+ const sh=.012+rnd()*.025,tone=new THREE.Color().setHSL(.06,.3,sh+(rnd()<.08?.06:0));
+ const L=7;const pts=[];let p=P.clone().addScaledVector(Nn,-.1);let d=flow.clone().addScaledVector(Nn,.55).normalize();
+ for(let n=0;n<L;n++){pts.push(p.clone());const t=n/(L-1);
+  d.addScaledVector(side,Math.sin(t*5+ph)*wav*.12).addScaledVector(Nn,-.10).y-=.07*t;d.normalize();
+  const step=len/(L-1);p=p.clone().addScaledVector(d,step);}
+ for(let n=0;n<L;n++){const w=w0*(1-n/(L-1)*.9);const q=pts[n];
+  verts.push(q.x-side.x*w,q.y-side.y*w,q.z-side.z*w,q.x+side.x*w,q.y+side.y*w,q.z+side.z*w);
+  const c=tone.clone().multiplyScalar(.6+.8*n/(L-1));cols.push(c.r,c.g,c.b,c.r,c.g,c.b);
+  if(n<L-1){const a=vc+2*n;hidx.push(a,a+1,a+2,a+1,a+3,a+2)}}
+ vc+=2*L}
+const hg=new THREE.BufferGeometry();hg.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));
+hg.setAttribute('color',new THREE.Float32BufferAttribute(cols,3));hg.setIndex(hidx);hg.computeVertexNormals();
+const hair=new THREE.Mesh(hg,new THREE.MeshStandardMaterial({vertexColors:true,roughness:.4,metalness:.15,side:THREE.DoubleSide,envMap:env,envMapIntensity:.4}));
+scene.add(hair);
+
+addEventListener('resize',()=>{cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+(function loop(){ctl.update();renderer.render(scene,cam);requestAnimationFrame(loop)})();
+</script></body></html>
